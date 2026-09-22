@@ -23,8 +23,8 @@ private:
     Ort::SessionOptions session_options;
     std::unique_ptr<Ort::Session> session;
     OrtCUDAProviderOptions cuda_options;
-    const int inputWidth = 640;
-    const int inputHeight = 640;
+    const int targetWidth = 640;
+    const int targetHeight = 640;
     const float confThreshold = 0.45f;
     const float nmsThreshold = 0.5f;
     std::vector<const char*> inputNames = {"images"};
@@ -76,7 +76,7 @@ public:
         // 1. Calculate aspect-ratio preserving scale
         int w = input.cols;
         int h = input.rows;
-        float scale = std::min((float)inputWidth / w, (float)inputHeight / h);
+        float scale = std::min((float)targetWidth / w, (float)targetHeight / h);
         
         int newW = std::round(w * scale);
         int newH = std::round(h * scale);
@@ -86,17 +86,17 @@ public:
         cv::resize(input, resized, cv::Size(newW, newH));
 
         // 3. Create canvas with letterbox padding (gray or black background)
-        int padW = (inputWidth - newW) / 2;
-        int padH = (inputHeight - newH) / 2;
+        int padW = (targetWidth - newW) / 2;
+        int padH = (targetHeight - newH) / 2;
         
-        cv::Mat padded(inputHeight, inputWidth, CV_8UC3, cv::Scalar(114, 114, 114));
+        cv::Mat padded(targetHeight, targetWidth, CV_8UC3, cv::Scalar(114, 114, 114));
         resized.copyTo(padded(cv::Rect(padW, padH, newW, newH)));
 
         // 4. Create blob from padded image (DO NOT pass cv::Size(640, 640) here to avoid re-scaling)
         cv::Mat blob;
         cv::dnn::blobFromImage(padded, blob, 1.0 / 255.0, cv::Size(), cv::Scalar(), true, false);
 
-        std::vector<int64_t> inputShape = {1, 3, inputHeight, inputWidth};
+        std::vector<int64_t> inputShape = {1, 3, targetHeight, targetWidth};
         Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
         Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
@@ -143,10 +143,10 @@ public:
 
                 // Multiply by input size if model outputs normalized coordinates [0, 1]
                 if (cx <= 1.0f && cy <= 1.0f && w_box <= 1.0f && h_box <= 1.0f) {
-                    cx *= inputWidth;
-                    cy *= inputHeight;
-                    w_box *= inputWidth;
-                    h_box *= inputHeight;
+                    cx *= targetWidth;
+                    cy *= targetHeight;
+                    w_box *= targetWidth;
+                    h_box *= targetHeight;
                 }
 
                 // Scale coordinates back to original unpadded image
