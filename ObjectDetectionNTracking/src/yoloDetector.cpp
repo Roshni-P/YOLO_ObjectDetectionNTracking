@@ -67,20 +67,34 @@ public:
     }
 
     std::vector<Detection> detect(py::array_t<uint8_t> inputImage, 
-                                  float confThreshold = 0.45f, 
-                                  float nmsThreshold = 0.5f) {
-        
+                              float confThreshold = 0.45f, 
+                              float nmsThreshold = 0.5f) 
+    {
+    
         cv::Mat input = numpyToCvMat(inputImage);
 
-        // Preprocessing
-        int newW = std::round(input.cols * 1.0/255);
-        int newH = std::round(input.rows * 1.0/255);
+        // 1. Calculate aspect-ratio preserving scale
+        int w = input.cols;
+        int h = input.rows;
+        float scale = std::min((float)inputWidth / w, (float)inputHeight / h);
+        
+        int newW = std::round(w * scale);
+        int newH = std::round(h * scale);
+
+        // 2. Resize maintaining aspect ratio
+        cv::Mat resized;
+        cv::resize(input, resized, cv::Size(newW, newH));
+
+        // 3. Create canvas with letterbox padding (gray or black background)
         int padW = (inputWidth - newW) / 2;
         int padH = (inputHeight - newH) / 2;
-        int scale = std::max(newW, newH);
+        
+        cv::Mat padded(inputHeight, inputWidth, CV_8UC3, cv::Scalar(114, 114, 114));
+        resized.copyTo(padded(cv::Rect(padW, padH, newW, newH)));
 
+        // 4. Create blob from padded image (DO NOT pass cv::Size(640, 640) here to avoid re-scaling)
         cv::Mat blob;
-        cv::dnn::blobFromImage(input, blob, 1.0 / 255.0, cv::Size(640, 640), cv::Scalar(), true, false);
+        cv::dnn::blobFromImage(padded, blob, 1.0 / 255.0, cv::Size(), cv::Scalar(), true, false);
 
         std::vector<int64_t> inputShape = {1, 3, inputHeight, inputWidth};
         Ort::MemoryInfo memoryInfo = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
@@ -102,7 +116,6 @@ public:
         float* rawOutput = outputTensors[0].GetTensorMutableData<float>();
         auto outputShape = outputTensors[0].GetTensorTypeAndShapeInfo().GetShape(); 
 
-        // Output dimensions: [1, 84, 8400] (84 = 4 box values + 80 class scores)
         int numAttributes = outputShape[1]; // 84
         int numAnchors = outputShape[2];    // 8400
 
@@ -110,9 +123,8 @@ public:
         std::vector<float> confidences;
         std::vector<cv::Rect> boxes;
 
-        // Postprocessing: Iterate over 8400 anchor predictions
+        // Postprocessing
         for (int i = 0; i < numAnchors; ++i) {
-            // Find class with highest confidence
             float maxScore = -1.0f;
             int classId = -1;
             for (int c = 0; c < numAttributes - 4; ++c) {
@@ -124,17 +136,30 @@ public:
             }
 
             if (maxScore >= confThreshold) {
-                // Extract bounding box values [cx, cy, w, h]
                 float cx = rawOutput[0 * numAnchors + i];
                 float cy = rawOutput[1 * numAnchors + i];
-                float w  = rawOutput[2 * numAnchors + i];
-                float h  = rawOutput[3 * numAnchors + i];
+                float w_box = rawOutput[2 * numAnchors + i];
+                float h_box = rawOutput[3 * numAnchors + i];
 
-                // Scale bounding box back to original image coordinates
-                int left = static_cast<int>((cx - padW - 0.5f * w) / scale);
-                int top  = static_cast<int>((cy - padH - 0.5f * h) / scale);
-                int width = static_cast<int>(w / scale);
-                int height = static_cast<int>(h / scale);
+                // Multiply by input size if model outputs normalized coordinates [0, 1]
+                if (cx <= 1.0f && cy <= 1.0f && w_box <= 1.0f && h_box <= 1.0f) {
+                    cx *= inputWidth;
+                    cy *= inputHeight;
+                    w_box *= inputWidth;
+                    h_box *= inputHeight;
+                }
+
+                // Scale coordinates back to original unpadded image
+                int left = static_cast<int>((cx - padW - 0.5f * w_box) / scale);
+                int top  = static_cast<int>((cy - padH - 0.5f * h_box) / scale);
+                int width = static_cast<int>(w_box / scale);
+                int height = static_cast<int>(h_box / scale);
+
+                // Clamp coordinates to image boundary
+                left = std::max(0, std::min(left, w - 1));
+                top  = std::max(0, std::min(top, h - 1));
+                width = std::max(1, std::min(width, w - left));
+                height = std::max(1, std::min(height, h - top));
 
                 boxes.push_back(cv::Rect(left, top, width, height));
                 confidences.push_back(maxScore);
