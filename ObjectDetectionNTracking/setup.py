@@ -11,6 +11,7 @@ conda_include = os.path.join(conda_prefix, "include")
 
 # Include directories for OpenCV and ONNX Runtime
 include_dirs = [
+    "include",
     conda_include,
     os.path.join(conda_include, "opencv4"),
     os.path.join(conda_include, "opencv4", "opencv2"),
@@ -43,10 +44,12 @@ extra_link_args = [
     "-Wl,-rpath,$ORIGIN",
 ]
 
+sources = glob.glob("src/*.cpp")
+
 ext_modules = [
     Pybind11Extension(
         "yoloDetector",
-        ["src/yoloDetector.cpp"],
+        sources,
         include_dirs=include_dirs,
         library_dirs=library_dirs,
         libraries=libraries,
@@ -54,6 +57,16 @@ ext_modules = [
         extra_link_args=extra_link_args,
         cxx_std=17,
     ),
+    Pybind11Extension(
+        "queueUtils",
+        ["src/processQueue.cpp"],
+        include_dirs=include_dirs,
+        library_dirs=library_dirs,
+        libraries=libraries,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+        cxx_std=17,
+    ),    
 ]
 
 setup(
