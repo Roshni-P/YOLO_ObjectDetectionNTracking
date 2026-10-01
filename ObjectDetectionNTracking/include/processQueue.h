@@ -17,8 +17,37 @@ class ProcessQueue
     int maxSize;
 
     public:
-    ProcessQueue(int qSize);
-    bool pop(T& element);
-    void push(T element);
-    bool isEmpty();
+    ProcessQueue(int qSize): maxSize(qSize)
+    {
+    }
+
+    bool isEmpty()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        
+        return queue.empty();
+    }
+
+    void push(T element)
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        if(maxSize>0 && !queue.empty())
+        {
+            queue.pop();
+        }
+
+        queue.push(std::move(element));
+        cv.notify_one();
+    }
+
+    bool pop(T& element)
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [this](){return !queue.empty();});
+
+        element = std::move(queue.front());
+        queue.pop();
+
+        return true;
+    }
 };

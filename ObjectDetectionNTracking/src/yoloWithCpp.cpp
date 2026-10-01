@@ -40,6 +40,7 @@ class ObjectDetector
     std::vector<const char*> outputNames = {"output0"};
     ProcessQueue<cv::Mat> videoQueue;   // Bounded Queue
     ProcessQueue<InferenceResult> processFrameQueue; // Unbounded Queue
+    int frameID;
 
     public:
     ObjectDetector(bool useCUDA = false): videoQueue(1), processFrameQueue(0)
@@ -181,16 +182,73 @@ class ObjectDetector
     }
 
     // Create threads within this function
-    void Execute()
+    void execute()
     {
+        std::string videoPath = "PeopleStreetCloseView.mp4";
+        cv::VideoCapture cap(videoPath);
+        std::thread videoThread(&ObjectDetector::captureLiveFeed, this, std::ref(cap));
+        videoThread.join();
 
     }
 
     //Thread 1 - Read video frames
-
+    void captureLiveFeed(cv::VideoCapture& cap)
+    {
+        cv::Mat frame;
+        while(cap.read(frame))
+        {
+            if(!frame.empty())
+            {
+                videoQueue.push(frame.clone());
+            }
+        }
+    }
 
     //Thread 2 - Process the frames
+    void inferenceDetection()
+    {
+        cv::Mat frame;
+        while(true)
+        {
+            videoQueue.pop(frame);
+            std::vector<Detection> result = detect(frame);
+            processFrameQueue.push({frame, result, frameID++});
+        }
+    }
 
     //Thread 3 - Render on screen
+    void RenderOnScreen()
+    {
+        InferenceResult result;
+        std::string windowName = "Live Camera Feed";
+        cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
+
+        while(true)
+        {
+            cv::imshow(windowName, result.frame);
+            
+            if (cv::waitKey(1) == 27) {
+            break;
+            }
+        }
+
+        cv::destroyAllWindows();
+    }
 
 };
+
+// --- Pybind11 Module Binding ---
+PYBIND11_MODULE(yoloWithCpp, m) {
+    m.doc() = "C++ OpenCV YOLOv8 Detector Pybind11 Module";
+
+    py::class_<Detection>(m, "Detection")
+        .def_readonly("class_id", &Detection::classId)
+        .def_readonly("confidence", &Detection::confidence)
+        .def_readonly("box", &Detection::box);
+
+    py::class_<ObjectDetector>(m, "ObjectDetector")
+        .def(py::init<bool>(), py::arg("use_cuda") = false)
+        .def("execute", &ObjectDetector::execute)
+        .def("load_model", &ObjectDetector::loadModel,
+             py::arg("model_path"));
+}

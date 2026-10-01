@@ -58,8 +58,8 @@ ext_modules = [
         cxx_std=17,
     ),
     Pybind11Extension(
-        "queueUtils",
-        ["src/processQueue.cpp"],
+        "yoloWithCpp",
+        ["src/yoloWithCpp.cpp"],
         include_dirs=include_dirs,
         library_dirs=library_dirs,
         libraries=libraries,
