@@ -40,7 +40,7 @@ class ObjectDetector
     std::vector<const char*> outputNames = {"output0"};
     ProcessQueue<cv::Mat> videoQueue;   // Bounded Queue
     ProcessQueue<InferenceResult> processFrameQueue; // Unbounded Queue
-    int frameID;
+    int frameID=0;
 
     public:
     ObjectDetector(bool useCUDA = false): videoQueue(1), processFrameQueue(0)
@@ -186,21 +186,55 @@ class ObjectDetector
     {
         std::string videoPath = "PeopleStreetCloseView.mp4";
         cv::VideoCapture cap(videoPath);
-        std::thread videoThread(&ObjectDetector::captureLiveFeed, this, std::ref(cap));
-        videoThread.join();
+        if (!cap.isOpened()) 
+        {
+            std::cerr << "Error: Could not open video file." << std::endl;
+            return;
+        }
 
+        std::thread videoThread(&ObjectDetector::captureLiveFeed, this, std::ref(cap));
+
+        std::thread inferenceThread(&ObjectDetector::inferenceDetection, this);
+
+        InferenceResult result;
+        std::string windowName = "Live Camera Feed";
+        cv::namedWindow(windowName, cv::WINDOW_NORMAL);
+        cv::resizeWindow(windowName, 1280, 720);
+
+        while(true)
+        {
+            if(processFrameQueue.pop(result))
+            {
+                cv::imshow(windowName, result.frame);
+            }
+            
+            if (cv::waitKey(1) == 27) 
+            {
+                break;
+            }
+        }
+
+         if (videoThread.joinable()) 
+            videoThread.join();
+        if (inferenceThread.joinable()) 
+            inferenceThread.join();
+ 
+        cv::destroyAllWindows();
     }
 
     //Thread 1 - Read video frames
     void captureLiveFeed(cv::VideoCapture& cap)
     {
         cv::Mat frame;
+        int test=0;
         while(cap.read(frame))
         {
             if(!frame.empty())
             {
                 videoQueue.push(frame.clone());
             }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
@@ -213,26 +247,8 @@ class ObjectDetector
             videoQueue.pop(frame);
             std::vector<Detection> result = detect(frame);
             processFrameQueue.push({frame, result, frameID++});
+
         }
-    }
-
-    //Thread 3 - Render on screen
-    void RenderOnScreen()
-    {
-        InferenceResult result;
-        std::string windowName = "Live Camera Feed";
-        cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
-
-        while(true)
-        {
-            cv::imshow(windowName, result.frame);
-            
-            if (cv::waitKey(1) == 27) {
-            break;
-            }
-        }
-
-        cv::destroyAllWindows();
     }
 
 };

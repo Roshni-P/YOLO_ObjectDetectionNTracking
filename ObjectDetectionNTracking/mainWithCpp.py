@@ -6,4 +6,4 @@ if not detector.load_model(""):
     print("Error: Could not load YOLOv8 model.")
     exit()
 
-yoloWithCpp.execute()
+detector.execute()

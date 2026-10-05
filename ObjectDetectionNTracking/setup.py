@@ -33,6 +33,8 @@ libraries = [
     "opencv_imgproc",
     "opencv_dnn",
     "opencv_imgcodecs",
+    "opencv_videoio",
+    "opencv_highgui",
     # ONNX Runtime binary (links libonnxruntime.so)
     "onnxruntime",
 ]
