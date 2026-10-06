@@ -15,6 +15,7 @@ class ProcessQueue
     std::queue<T> queue;
     std::condition_variable cv;
     int maxSize;
+    bool shutdown = false;
 
     public:
     ProcessQueue(int qSize): maxSize(qSize)
@@ -26,6 +27,15 @@ class ProcessQueue
         std::lock_guard<std::mutex> lock(mtx);
         
         return queue.empty();
+    }
+
+    void stop()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            shutdown = true;
+        }
+        cv.notify_all();
     }
 
     void push(T element)
@@ -43,8 +53,11 @@ class ProcessQueue
     bool pop(T& element)
     {
         std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [this](){return !queue.empty();});
+        cv.wait(lock, [this](){return (!queue.empty() || shutdown);});
 
+        if(shutdown && queue.empty())
+            return false;
+            
         element = std::move(queue.front());
         queue.pop();
 

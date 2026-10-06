@@ -41,6 +41,7 @@ class ObjectDetector
     ProcessQueue<cv::Mat> videoQueue;   // Bounded Queue
     ProcessQueue<InferenceResult> processFrameQueue; // Unbounded Queue
     int frameID=0;
+    bool bKeepRunning = true;
 
     public:
     ObjectDetector(bool useCUDA = false): videoQueue(1), processFrameQueue(0)
@@ -196,45 +197,66 @@ class ObjectDetector
 
         std::thread inferenceThread(&ObjectDetector::inferenceDetection, this);
 
-        InferenceResult result;
+        InferenceResult output;
+        std::vector<Detection> detectionOutput;
         std::string windowName = "Live Camera Feed";
         cv::namedWindow(windowName, cv::WINDOW_NORMAL);
         cv::resizeWindow(windowName, 1280, 720);
+        std::string label = "Vehicle";
+        cv::Mat videoFrame;
 
-        while(true)
+        while(bKeepRunning)
         {
-            if(processFrameQueue.pop(result))
+            // Using the video capture queue, to avoid lag
+            // Rendering of bbox is done on top of this frame
+            videoQueue.pop(videoFrame);
+
+            if(processFrameQueue.pop(output))
             {
-                cv::imshow(windowName, result.frame);
+                detectionOutput = output.result;
+                for(auto det:detectionOutput)
+                {
+                    std::vector<int> box = det.box;
+                    cv::rectangle(videoFrame, cv::Point(box[0], box[1]), // Top-Left
+                        cv::Point(box[0]+box[2], box[1]+box[3]),  // Bottom-Right
+                        cv::Scalar(0,255,0), 3);
+                    
+                    label = (det.classId == 0 ? "Person": "Vehicle");
+                    cv::putText(videoFrame, label, cv::Point(box[0], box[1]-7), 
+                        cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(0,255,0), 3);
+                }
             }
+            cv::imshow(windowName, videoFrame);
             
             if (cv::waitKey(1) == 27) 
             {
+                bKeepRunning = false;
                 break;
             }
         }
 
-         if (videoThread.joinable()) 
+        videoQueue.stop();
+        processFrameQueue.stop();
+
+        if (videoThread.joinable()) 
             videoThread.join();
         if (inferenceThread.joinable()) 
             inferenceThread.join();
  
         cv::destroyAllWindows();
+        cv::waitKey(1);
     }
 
     //Thread 1 - Read video frames
     void captureLiveFeed(cv::VideoCapture& cap)
     {
         cv::Mat frame;
-        int test=0;
-        while(cap.read(frame))
+        while(cap.read(frame) && bKeepRunning)
         {
             if(!frame.empty())
             {
                 videoQueue.push(frame.clone());
             }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
@@ -242,12 +264,11 @@ class ObjectDetector
     void inferenceDetection()
     {
         cv::Mat frame;
-        while(true)
+        while(bKeepRunning)
         {
             videoQueue.pop(frame);
             std::vector<Detection> result = detect(frame);
             processFrameQueue.push({frame, result, frameID++});
-
         }
     }
 
