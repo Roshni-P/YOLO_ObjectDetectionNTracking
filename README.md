@@ -16,4 +16,4 @@ The model inference, processing, rendering is done in C++. The C++ code is expos
 **python mainWithCpp.py** <br>
 
 **Note:** <br>
-The project has a different set of files. One main.py, that captures the video frames in python and pass each frame to yoloDetector.cpp. Inferencing is done in C++ while capturing and rendering occurs in Python. The drawback of this approach was that there is a lag due to passing of frames between Python and C++. This lag has been eliminated in mainWithCpp.py and yoloWithCpp.cpp
+The project has a separate set of files, a main.py, that captures the video frames in Python and passes each frame to yoloDetector.cpp. Inferencing is done in C++ while capturing and rendering occurs in Python. The drawback of this approach is that, there is a lag due to passing of frames, between Python and C++. This lag has been eliminated in mainWithCpp.py and yoloWithCpp.cpp
